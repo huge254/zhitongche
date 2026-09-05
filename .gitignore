@@ -1,0 +1,18 @@
+# 构建产物与缓存
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 环境与密钥（切勿提交）
+.env
+*.pem
+*.key
+
+# 日志与数据
+logs/
+*.log
+
+# IDE
+.idea/
+.vscode/

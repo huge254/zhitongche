@@ -1,0 +1,36 @@
+# 静态 PV（hostPath）：完整 K8s 没有内置存储供应，用 hostPath 显式提供
+# 通过 claimRef 精确预绑定到 StatefulSet 生成的 PVC 名称，保证绑定关系确定
+# 生产环境可替换为 Longhorn / NFS（本地有 longhorn-v1.12.0.yaml 和 nfs-provisioner 镜像）
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ztc-mysql-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes: ["ReadWriteOnce"]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /data/ztc/mysql
+    type: DirectoryOrCreate
+  claimRef:
+    namespace: zhitongche
+    name: mysql-data-mysql-0
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ztc-es-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes: ["ReadWriteOnce"]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /data/ztc/es
+    type: DirectoryOrCreate
+  claimRef:
+    namespace: zhitongche
+    name: es-data-elasticsearch-0

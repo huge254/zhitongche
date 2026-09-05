@@ -1,0 +1,31 @@
+# Ingress 进阶版（可选）：按域名分流学生端/企业端
+# 前提：集群已装 ingress-nginx（本地有 ingress-nginx-4.15.1.tgz chart）
+# 前端页面本身是同一套，靠 Ingress 做域名级入口隔离，体现多域名路由能力
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ztc-ingress
+  namespace: zhitongche
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: job.local        # 学生端
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: { number: 80 }
+    - host: hr.local         # 企业端
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: { number: 80 }

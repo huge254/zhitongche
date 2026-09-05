@@ -1,0 +1,40 @@
+# 种子数据：首次部署自动写入演示企业与职位
+# 通过一次性 Job 连接 MySQL 插入；重复执行会因唯一键/已存在而跳过（幂等靠业务字段判断）
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ztc-seed
+  namespace: zhitongche
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: seed
+          image: mysql:8.4
+          command:
+            - sh
+            - -c
+            - |
+              # 等待 MySQL 就绪
+              until mysqladmin ping -h mysql -uroot -proot123456 --silent; do
+                echo "waiting for mysql..."; sleep 3;
+              done
+              mysql -h mysql -uroot -proot123456 --default-character-set=utf8mb4 zhitongche <<'SQL'
+              INSERT IGNORE INTO company (id, name, contact, status) VALUES
+              (1, '云驰科技', 'hr@yunchi.com', 1),
+              (2, '数澜信息', 'hr@shulan.com', 1),
+              (3, '星辰互动', 'hr@xingchen.com', 0);
+
+              INSERT IGNORE INTO job (id, company_id, title, city, salary_min, salary_max, description, requirement, status) VALUES
+              (1, 1, '运维工程师', '重庆', 8000, 15000, '负责公司 Linux 服务器与容器平台的日常运维、监控告警体系建设，参与自动化脚本开发。', '熟悉 Linux、Shell、Docker/K8s，有 Prometheus 监控经验优先。', 1),
+              (2, 1, 'SRE 工程师', '重庆', 12000, 22000, '保障核心业务系统稳定性，建设可观测性平台（指标/日志/告警），推进故障演练与容量规划。', '3 年以上 SRE/运维开发经验，熟悉 K8s、CI/CD 与至少一门编程语言。', 1),
+              (3, 2, 'Java 开发工程师', '成都', 10000, 20000, '负责电商交易系统后端开发，参与高并发场景的性能优化。', '精通 Java、Spring 生态，熟悉 MySQL 调优与 Redis 缓存。', 1),
+              (4, 2, '测试开发工程师', '成都', 9000, 16000, '建设自动化测试体系，编写接口与 UI 自动化脚本，保障版本质量。', '熟悉 Python/Java，有 Jmeter/Pytest 实践经验。', 1),
+              (5, 1, '数据库管理员', '北京', 15000, 28000, '负责 MySQL 高可用架构设计与运维，主从复制、备份恢复与性能调优。', '精通 MySQL 体系，熟悉 XtraBackup、MHA 等工具链。', 1),
+              (6, 2, '前端开发工程师', '上海', 11000, 19000, '负责招聘平台前端页面开发，与后端协作完成交互需求。', '熟悉 HTML/CSS/JavaScript，了解主流前端框架。', 1),
+              (7, 1, 'DevOps 工程师', '深圳', 14000, 25000, '维护 GitLab CI/CD 流水线，推进基础设施即代码与镜像安全管理。', '熟悉 Jenkins/GitLab CI、Harbor、Ansible，了解云原生生态。', 1),
+              (8, 2, '数据分析师', '广州', 9000, 17000, '基于业务数据输出分析报告，搭建指标看板，支撑运营决策。', '熟练 SQL 与 Excel，掌握 Python 数据分析库优先。', 1);
+              SQL
+              echo "seed done"

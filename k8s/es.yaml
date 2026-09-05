@@ -1,0 +1,71 @@
+# Elasticsearch 单节点：单副本调优（堆内存 512m），供职位全文检索使用
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: zhitongche
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels: { app: elasticsearch }
+  template:
+    metadata:
+      labels: { app: elasticsearch }
+    spec:
+      # ES 固定调度到 master（数据目录在 master 的 hostPath，避免跨节点丢数据）
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["master"]
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.13.1
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: xpack.security.enabled
+              value: "false"
+            # 关闭 mmap 存储，避免调高宿主机 vm.max_map_count（k3s 环境更稳）
+            - name: node.store.allow_mmap
+              value: "false"
+            # 演示环境堆内存降到 384m，给 4G 的 master 留余量
+            - name: ES_JAVA_OPTS
+              value: "-Xms384m -Xmx384m"
+          ports:
+            - containerPort: 9200
+          volumeMounts:
+            - name: es-data
+              mountPath: /usr/share/elasticsearch/data
+          resources:
+            requests: { cpu: 100m, memory: 480Mi }
+            limits: { cpu: 1000m, memory: 768Mi }
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9200
+            initialDelaySeconds: 30
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: es-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ""        # 绑定静态 PV（hostpath-pv.yaml）
+        resources:
+          requests: { storage: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: zhitongche
+spec:
+  selector: { app: elasticsearch }
+  ports:
+    - port: 9200
+      targetPort: 9200

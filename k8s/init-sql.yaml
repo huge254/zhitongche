@@ -1,0 +1,53 @@
+# MySQL 初始化脚本（ConfigMap 形式挂载进 StatefulSet 的 init 目录）
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ztc-init-sql
+  namespace: zhitongche
+data:
+  01-init.sql: |
+    CREATE DATABASE IF NOT EXISTS zhitongche DEFAULT CHARSET utf8mb4;
+    USE zhitongche;
+
+    CREATE TABLE IF NOT EXISTS company (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      contact VARCHAR(50),
+      status TINYINT DEFAULT 0 COMMENT '0-待审核 1-已通过 2-已拒绝',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS job (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      company_id BIGINT NOT NULL,
+      title VARCHAR(100) NOT NULL,
+      city VARCHAR(50),
+      salary_min INT DEFAULT 0,
+      salary_max INT DEFAULT 0,
+      description TEXT,
+      requirement TEXT,
+      status TINYINT DEFAULT 1 COMMENT '1-招聘中 0-已关闭',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_city (city),
+      INDEX idx_status (status)
+    );
+
+    CREATE TABLE IF NOT EXISTS resume (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      student_name VARCHAR(50) NOT NULL,
+      school VARCHAR(100),
+      major VARCHAR(100),
+      skills VARCHAR(500),
+      self_intro TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS application (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      job_id BIGINT NOT NULL,
+      resume_id BIGINT NOT NULL,
+      status TINYINT DEFAULT 0 COMMENT '0-投递 1-初筛 2-面试 3-录用 4-淘汰',
+      apply_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_job_resume (job_id, resume_id),
+      INDEX idx_status (status)
+    );
