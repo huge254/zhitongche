@@ -5,79 +5,184 @@
 ## 节点规划
 
 | 节点 | 配置 | 角色 | 主机名建议 |
-|---|---|---|---|
+|---|---|---|---|  
 | k8s-master | 4C6G | 控制面（也跑业务，已放行调度） | k8s-master |
 | k8s-worker1 | 2C2G | 工作节点 | k8s-worker1 |
+
+
 | k8s-worker2 | 2C2G | 工作节点 | k8s-worker2 |
+
+
 
 > ⚠️ 2G 工作节点内存偏紧：项目三组件限额合计 ≈2.2G。K8s 调度器会把负载分散到三个节点（master 也参与调度），单节点最多扛 1~1.5G 业务，可跑。
 > 若某节点内存吃紧（OOM），优先把 ES 固定到 master（见文末"进阶调度"），或把 HPA 副本数观察控制在 2。
 
 ## 目录结构
 
-```
-zhitongche/
+```  
+zhitongche/   
 ├── backend/                  # Flask 后端（app.py / Dockerfile / requirements.txt）
+
+
+
 ├── frontend/                 # 5 个页面 + Nginx 反代 + Dockerfile
 ├── k8s/                      # 部署清单
 │   ├── hostpath-pv.yaml      # 静态 PV（hostPath，多节点注意节点亲和，见文末）
 │   ├── init-sql.yaml         # 建表 ConfigMap
+
+
+
 │   ├── mysql-sts.yaml        # MySQL StatefulSet + PVC + 探针
 │   ├── es.yaml               # ES 单节点调优（关 mmap、堆 512m）
 │   ├── redis.yaml            # Redis 限内存 128m + LRU
+
+
+
 │   ├── backend.yaml          # 后端 Deployment + 探针 + HPA(1~3 副本)
 │   ├── frontend.yaml         # 前端 Deployment + NodePort 30080
+
+
+
 │   ├── ingress.yaml          # （进阶）多域名 Ingress
+
+
+
 │   └── seed-job.yaml         # 种子数据 Job（3 企业 + 8 职位）
 ├── metrics-server-components_v0.9.0.yaml   # ← 从微信文件 2026-08\command_file 拷来（HPA 前置）
 ├── prepare-images.sh         # 多节点镜像分发脚本（必跑）
 └── deploy.sh                 # 一键部署脚本
-```
+```   
 
 ## 第一步：三台虚机基础初始化（每台都做）
 
 复用你《Rocky 系统初始化》的实战经验，三台全部执行：
 
-```bash
+```bash    
 # 主机名（分别在三台执行）
 hostnamectl set-hostname k8s-master      # 第二台: k8s-worker1  第三台: k8s-worker2
 
+
+
+
+
 # /etc/hosts 三台都加（改成你的实际 IP）
 cat <<EOF >> /etc/hosts
-192.168.x.11 k8s-master
-192.168.x.12 k8s-worker1
-192.168.x.13 k8s-worker2
-EOF
+
+
+
+
+192.168.x.100 master                
+192.168.x.102 node1                 
+192.168.x.103 node2                        
+EOF                        
 
 # 系统调优（关 swap / SELinux 转 permissive / 关防火墙仅学习环境 / 内核模块与转发）
 swapoff -a && sed -i '/swap/s/^/#/' /etc/fstab
+
+
+
+
+
+
+
+
+
+
+
 setenforce 0 && sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+
+
+
+
+
+
+
+
+
+
+
+
+
 systemctl stop firewalld && systemctl disable firewalld
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 cat <<EOF | tee /etc/modules-load.d/k8s.conf
-overlay
-br_netfilter
-EOF
+
+
+
+
+
+
+
+
+
+
+overlay          
+br_netfilter         
+EOF         
 modprobe overlay && modprobe br_netfilter
+
+
+
+
+
+
+
+
+
 cat <<EOF | tee /etc/sysctl.d/k8s.conf
+
+
+
+
+
 net.bridge.bridge-nf-call-iptables  = 1
+
+
+
+
 net.bridge.bridge-nf-call-ip6tables = 1
+
+
+
 net.ipv4.ip_forward                 = 1
-EOF
-sysctl --system
+
+
+
+EOF  
+sysctl --system  
 
 # 时间同步（分布式集群必做，避免证书与日志错乱）
 dnf install -y chrony && systemctl enable --now chronyd
-```
+
+
+```  
 
 ## 第二步：三台安装 containerd（每台都做）
 
 用你微信文件里的本地包（`command_file/containerd-2.3.4-linux-amd64.tar.gz`），三台都执行：
 
-```bash
+```bash 
 tar -zxvf containerd-2.3.4-linux-amd64.tar.gz -C /usr/local
+
 mkdir -p /etc/containerd
+
 containerd config default > /etc/containerd/config.toml
+
 sed -i 's|SystemdCgroup = false|SystemdCgroup = true|' /etc/containerd/config.toml
+
 # sandbox 镜像指到阿里云，避免拉 registry.k8s.io 失败（你踩过的坑）
 sed -i 's|registry.k8s.io/pause:[0-9.]*|registry.aliyuncs.com/google_containers/pause:3.10.2|' /etc/containerd/config.toml
 
@@ -204,36 +309,44 @@ kubectl -n zhitongche get pods -w    # 观察 Pod 分布到哪些节点
                   - key: kubernetes.io/hostname
                     operator: In
                     values: ["k8s-master"]
-```
+``` 
 
 同理 MySQL 也可固定。这样两个 2G 节点只跑后端/前端/种子等轻负载。
 
 ## 进阶：Ingress 多域名（可选）
 
-```bash
+```bash 
 kubectl apply -f k8s/ingress.yaml
+
 # 本机 hosts 加： <节点IP> job.local hr.local
-```
+
+``` 
 
 前提：集群已装 ingress-nginx（本地有 `ingress-nginx-4.15.1.tgz` chart + 镜像）。
+
 
 ## 资源预算
 
 | 组件 | limits | 建议落点 |
-|---|---|---|
+|---|---|---| 
 | Elasticsearch | 1Gi | master（6G） |
+
 | MySQL | 512Mi | master |
+
 | 后端 ×1~3 | 256Mi/副本 | 分散三节点 |
 | 前端 / Redis | 128Mi / 192Mi | worker |
+
 
 ## 常见问题
 
 | 现象 | 处理 |
-|---|---|
+|---|---| 
 | node 一直 NotReady | Calico 没起好：`kubectl get pods -n kube-system`，确认三个节点的 calico-node 都 Running；镜像没导全会 ImagePullBackOff |
 | Pod 卡在 Pending | `kubectl describe pod` 看事件；多为 PVC 未绑定（hostpath-pv.yaml 是否 apply）或节点内存不足 |
 | ImagePullBackOff | 镜像没分发到该节点：重跑 `./prepare-images.sh`，或手动 `ctr -n k8s.io images ls` 核对 |
 | worker 节点 OOM | 减副本/固定有状态组件到 master（见"进阶调度"）；观察 `free -h` 与 `kubectl top nodes` |
 | HPA 显示 unknown | metrics-server 未就绪：`kubectl -n kube-system get pods` 检查，`kubectl top nodes` 验证 |
+
 | 搜索无结果但首页有职位 | `kubectl -n zhitongche rollout restart deploy/backend`（启动时全量同步 ES） |
 | join 命令过期 | master 上 `kubeadm token create --print-join-command` 重新生成 |
+
